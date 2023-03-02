@@ -1,7 +1,7 @@
 """Template test module."""
 import pytest
 from amiga_package import __version__
-from amiga_package import ops
+from amiga_package import ops  # this would be what i change to be aruco_detection
 
 # import the internal libs and test
 
