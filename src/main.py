@@ -199,8 +199,8 @@ class ArucoApp(App):
             # get the sync frame
             frame: oak_pb2.OakSyncFrame = response.frame
 
-            response: oak_pb2.GetCalibrationReply = await client.get_calibration()
-            calibration: oak_pb2.OakCalibration = response.calibration
+            reply: oak_pb2.GetCalibrationReply = await client.get_calibration()
+            calibration: oak_pb2.OakCalibration = reply.calibration
 
             # Below is how we get camera matrix and distortion coefficients from calibration data
             dist = np.array(
