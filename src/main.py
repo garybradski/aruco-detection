@@ -256,12 +256,6 @@ class ArucoApp(App):
 
                         # Apply the color map to the depth image
                         colored_depth = cv2.applyColorMap(rescaled_array, colormap)
-
-                        print(
-                            "depth pix [200:10,200:210] {}".format(
-                                depth[center_y : center_y + 4, center_x : center_x + 4]
-                            )
-                        )
                         cv2.imshow("depth", colored_depth)
                         cv2.waitKey(10)
                     # # trying to compute the depth above, pretty sure the image part is wrong
