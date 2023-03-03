@@ -165,7 +165,7 @@ class ArucoApp(App):
             await asyncio.sleep(0.01)
 
         response_stream = None
-
+        dim = None  # Will hold rgb image dimensions
         while True:
             # check the state of the service
             state = await client.get_state()
@@ -217,12 +217,47 @@ class ArucoApp(App):
                         getattr(frame, view_name).image_data
                     )
 
+                    # Set RGB dimensions
+                    if view_name == "rgb" and dim is None:
+                        width = int(img.shape[1])  # * scale_percent / 100)
+                        height = int(img.shape[0])  # * scale_percent / 100)
+                        dim = (width, height)
+                        print("image dim: ", dim)
+
                     # Trying to get a depth map:
-                    # if view_name == "disparity":
-                    #     disp_img = img[:,:,0] # because there are too many channels
-                    #     base_line = 2.0 * calibration.camera_data[2].extrinsics.spec_translation.x # in cm
-                    #     focal_length_pix = calibration.camera_data[2].intrinsic_matrix[0] # focal length in pixels
-                    #     depth = focal_length_pix * base_line / (img + 1.0*10e-8)
+                    if view_name == "disparity":
+                        disp_img = img[:, :, 0]  # because there are too many channels
+                        base_line = (
+                            2.0
+                            * calibration.camera_data[2].extrinsics.spec_translation.x
+                        )  # in cm
+                        focal_length_pix = calibration.camera_data[2].intrinsic_matrix[
+                            0
+                        ]  # focal length in pixels
+                        depth = np.clip(
+                            focal_length_pix
+                            * base_line
+                            / (100.0 * (disp_img + 1.0 * 10e-8)),
+                            None,
+                            10.0,
+                        )  # clip depths > 10m
+                        # Get the dimensions of the image
+                        height, width = depth.shape
+
+                        # Calculate the center point of the image
+                        center_x = int(width / 2)
+                        center_y = int(height / 2)
+                        print("center is [{}, {}]".format(center_x, center_y))
+                        rescaled_array = cv2.normalize(
+                            depth, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U
+                        )
+                        # Define color map
+                        colormap = cv2.COLORMAP_JET
+
+                        # Apply the color map to the depth image
+                        colored_depth = cv2.applyColorMap(rescaled_array, colormap)
+                        cv2.imshow("depth", colored_depth)
+                        cv2.waitKey(10)
                     # # trying to compute the depth above, pretty sure the image part is wrong
 
                     # New trial testing the rvecs and tvecs outputted:
@@ -232,10 +267,10 @@ class ArucoApp(App):
                             frame_markers, corners, ids, mtx, dist
                         )  # did not need to equal rvecs and t but could use later
                         img = frame_markers
-                    # cv2.resize(img, (0, 0), fx=0.5, fy=0.5) # other attempt
-                    cv2.resize(
-                        img, (100, 50)
-                    )  # trying to make the image show up bigger in kivy
+
+                    # # Scale up images for consistent viewing
+                    # if int(img.shape[1]) != dim[0]:  # If img width is different, make it the same
+                    #     img = cv2.resize(img, dim, interpolation=cv2.INTER_AREA)
 
                     texture = Texture.create(
                         size=(img.shape[1], img.shape[0]), icolorfmt="bgr"
