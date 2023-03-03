@@ -218,35 +218,51 @@ class ArucoApp(App):
                     )
 
                     # Set RGB dimensions
-                    if view_name == "rgb" and dim == None:
+                    if view_name == "rgb" and dim is None:
                         width = int(img.shape[1])  # * scale_percent / 100)
                         height = int(img.shape[0])  # * scale_percent / 100)
                         dim = (width, height)
-                        print("image dim: ",dim)
+                        print("image dim: ", dim)
 
                     # Trying to get a depth map:
                     if view_name == "disparity":
-                        disp_img = img[:,:,0] # because there are too many channels
-                        base_line = 2.0 * calibration.camera_data[2].extrinsics.spec_translation.x # in cm
-                        focal_length_pix = calibration.camera_data[2].intrinsic_matrix[0] # focal length in pixels
-                        depth = np.clip(focal_length_pix * base_line / (100.0 * (disp_img + 1.0*10e-8)),None,10.0) # clip depths > 10m
+                        disp_img = img[:, :, 0]  # because there are too many channels
+                        base_line = (
+                            2.0
+                            * calibration.camera_data[2].extrinsics.spec_translation.x
+                        )  # in cm
+                        focal_length_pix = calibration.camera_data[2].intrinsic_matrix[
+                            0
+                        ]  # focal length in pixels
+                        depth = np.clip(
+                            focal_length_pix
+                            * base_line
+                            / (100.0 * (disp_img + 1.0 * 10e-8)),
+                            None,
+                            10.0,
+                        )  # clip depths > 10m
                         # Get the dimensions of the image
                         height, width = depth.shape
 
                         # Calculate the center point of the image
                         center_x = int(width / 2)
                         center_y = int(height / 2)
-                        print("center is [{}, {}]".format(center_x,center_y))
-                        rescaled_array = cv2.normalize(depth, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U)
+                        print("center is [{}, {}]".format(center_x, center_y))
+                        rescaled_array = cv2.normalize(
+                            depth, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U
+                        )
                         # Define color map
                         colormap = cv2.COLORMAP_JET
 
                         # Apply the color map to the depth image
                         colored_depth = cv2.applyColorMap(rescaled_array, colormap)
 
-
-                        print("depth pix [200:10,200:210] {}".format(depth[center_y:center_y+4,center_x:center_x+4]))
-                        cv2.imshow("depth",colored_depth)
+                        print(
+                            "depth pix [200:10,200:210] {}".format(
+                                depth[center_y : center_y + 4, center_x : center_x + 4]
+                            )
+                        )
+                        cv2.imshow("depth", colored_depth)
                         cv2.waitKey(10)
                     # # trying to compute the depth above, pretty sure the image part is wrong
 
