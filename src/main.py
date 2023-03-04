@@ -123,7 +123,7 @@ class MyAruco:
         return rvecs, tvecs
 
 
-class ArucoApp(App):
+class CompostApp(App):
     def __init__(self, address: str, port: int, stream_every_n: int) -> None:
         super().__init__()
         self.address = address
@@ -166,6 +166,20 @@ class ArucoApp(App):
 
         response_stream = None
         dim = None  # Will hold rgb image dimensions
+        dist = None  # Fill in once with distortion
+        mtx = None  # File in once with intrinsic calibration
+        focal_length_pix = None
+        base_line = None
+        depth_center_x = 0  # Only set once for disparity image
+        depth_center_y = 0
+        # Write image names
+        depthi = "depth_"
+        color_depth = "color_depth_"
+        left = "left_"
+        right = "right_"
+        rgb = "rgb_"
+        write_count = 0  # Number of imaages that have been written
+        write_count_str = '0000'  # Starting string of write_count
         while True:
             # check the state of the service
             state = await client.get_state()
@@ -203,11 +217,13 @@ class ArucoApp(App):
             calibration: oak_pb2.OakCalibration = reply.calibration
 
             # Below is how we get camera matrix and distortion coefficients from calibration data
-            dist = np.array(
-                calibration.camera_data[2].distortion_coeff
-            )  # the 2 in both of these means the right camera
-            mtx = np.array(calibration.camera_data[2].intrinsic_matrix).reshape(3, 3)
+            if dist is None or mtx is None:  # Only set dist and mtx once
+                dist = np.array(
+                    calibration.camera_data[2].distortion_coeff
+                )  # the 2 in both of these means the right camera
+                mtx = np.array(calibration.camera_data[2].intrinsic_matrix).reshape(3, 3)
 
+            write_img = False
             # get image and show
             for view_name in ["rgb", "disparity", "left", "right"]:
                 # Skip if view_name was not included in frame
@@ -217,23 +233,33 @@ class ArucoApp(App):
                         getattr(frame, view_name).image_data
                     )
 
-                    # Set RGB dimensions
-                    if view_name == "rgb" and dim is None:
-                        width = int(img.shape[1])  # * scale_percent / 100)
-                        height = int(img.shape[0])  # * scale_percent / 100)
-                        dim = (width, height)
-                        print("image dim: ", dim)
+                    # # Set RGB dimensions
+                    # if view_name == "rgb" and dim is None:
+                    #     width = int(img.shape[1])  # * scale_percent / 100)
+                    #     height = int(img.shape[0])  # * scale_percent / 100)
+                    #     dim = (width, height)
+                    #     print("image dim: ", dim)
+                    if view_name == "rgb":
+                        write_img = False  # Clear the write_img state every rgb image
+                        key = cv2.waitKey(20)
+                        if key == ord(' '):
+                            print("key is {}, write_count is {}".format(key,write_count))
+                            if write_img == False:
+                                write_count_str = '{:0>4d}'.format(write_count)
+                                write_count += 1
+                                write_img = True
 
                     # Trying to get a depth map:
                     if view_name == "disparity":
-                        disp_img = img[:, :, 0]  # because there are too many channels
-                        base_line = (
-                            2.0
-                            * calibration.camera_data[2].extrinsics.spec_translation.x
-                        )  # in cm
-                        focal_length_pix = calibration.camera_data[2].intrinsic_matrix[
-                            0
-                        ]  # focal length in pixels
+                        disp_img = img[:, :, 0]  # reduce 3 reduntant channels to one
+                        if base_line is None:  # Only set base_line and focal_length_pix once
+                            base_line = (
+                                2.0
+                                * calibration.camera_data[2].extrinsics.spec_translation.x
+                            )  # in cm
+                            focal_length_pix = calibration.camera_data[2].intrinsic_matrix[
+                                0
+                            ]  # focal length in pixels
                         depth = np.clip(
                             focal_length_pix
                             * base_line
@@ -241,13 +267,13 @@ class ArucoApp(App):
                             None,
                             10.0,
                         )  # clip depths > 10m
-                        # Get the dimensions of the image
-                        height, width = depth.shape
 
                         # Calculate the center point of the image
-                        center_x = int(width / 2)
-                        center_y = int(height / 2)
-                        print("center is [{}, {}]".format(center_x, center_y))
+                        if depth_center_x == 0:  # Only set this once
+                            height, width = depth.shape
+                            depth_center_x = int(width / 2)
+                            depth_center_y = int(height / 2)
+                            #print("center is [{}, {}]".format(depth_center_x, depth_center_y))
                         rescaled_array = cv2.normalize(
                             depth, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U
                         )
@@ -256,17 +282,37 @@ class ArucoApp(App):
 
                         # Apply the color map to the depth image
                         colored_depth = cv2.applyColorMap(rescaled_array, colormap)
-                        cv2.imshow("depth", colored_depth)
-                        cv2.waitKey(10)
-                    # # trying to compute the depth above, pretty sure the image part is wrong
+                        cv2.imshow("colored depth", colored_depth)
 
-                    # New trial testing the rvecs and tvecs outputted:
-                    corners, ids, frame_markers = self.ma.detect(img)
-                    if corners:
-                        rvecs, tvecs = self.ma.pose_estimation(
-                            frame_markers, corners, ids, mtx, dist
-                        )  # did not need to equal rvecs and t but could use later
-                        img = frame_markers
+                    if write_img:
+                        print("In write_img, view_name = {}, write_count = {}".format(view_name, write_count))
+                        if view_name == "disparity":
+                            cv2.imwrite(depthi + write_count_str + ".png", depth)
+                            print("type colored_depth {}, shape {} pix type {}".format(type(colored_depth), colored_depth.shape, type(colored_depth[1,2,0])))
+                            cv2.imwrite(color_depth + write_count_str + ".png", colored_depth)
+                            print("hey")
+                            print(color_depth + write_count_str + ".png")
+                        elif view_name == "rgb":
+                            s = rgb + write_count_str + ".png"
+                            print(s)
+                            print("rgb colored_depth {}, shape {} pix type {}".format(type(img), img.shape, type(img[1,2,0])))
+                            cv2.imwrite(s, img)
+                        elif view_name == "left":
+                            s = left + write_count_str + ".png"
+                            print(s)
+                            cv2.imwrite(s, img)
+                        else:  # view_name == "right":
+                            s = right + write_count_str + ".png"
+                            print(s)
+                            cv2.imwrite(s, img)
+
+                    # # New trial testing the rvecs and tvecs outputted:
+                    # corners, ids, frame_markers = self.ma.detect(img)
+                    # if corners:
+                    #     rvecs, tvecs = self.ma.pose_estimation(
+                    #         frame_markers, corners, ids, mtx, dist
+                    #     )  # did not need to equal rvecs and t but could use later
+                    #     img = frame_markers
 
                     # # Scale up images for consistent viewing
                     # if int(img.shape[1]) != dim[0]:  # If img width is different, make it the same
@@ -316,7 +362,7 @@ if __name__ == "__main__":
     loop = asyncio.get_event_loop()
     try:
         loop.run_until_complete(
-            ArucoApp(args.address, args.port, args.stream_every_n).app_func()
+            CompostApp(args.address, args.port, args.stream_every_n).app_func()
         )
     except asyncio.CancelledError:
         pass
