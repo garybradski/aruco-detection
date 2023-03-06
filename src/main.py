@@ -165,13 +165,12 @@ class CompostApp(App):
             await asyncio.sleep(0.01)
 
         response_stream = None
-        dim = None  # Will hold rgb image dimensions
+
         dist = None  # Fill in once with distortion
         mtx = None  # File in once with intrinsic calibration
         focal_length_pix = None
         base_line = None
         depth_center_x = 0  # Only set once for disparity image
-        depth_center_y = 0
         # Write image names
         depthi = "depth_"
         color_depth = "color_depth_"
@@ -179,7 +178,7 @@ class CompostApp(App):
         right = "right_"
         rgb = "rgb_"
         write_count = 0  # Number of imaages that have been written
-        write_count_str = '0000'  # Starting string of write_count
+        write_count_str = "0000"  # Starting string of write_count
         while True:
             # check the state of the service
             state = await client.get_state()
@@ -221,7 +220,10 @@ class CompostApp(App):
                 dist = np.array(
                     calibration.camera_data[2].distortion_coeff
                 )  # the 2 in both of these means the right camera
-                mtx = np.array(calibration.camera_data[2].intrinsic_matrix).reshape(3, 3)
+                mtx = np.array(calibration.camera_data[2].intrinsic_matrix).reshape(
+                    3, 3
+                )
+                print("mtx:\n", mtx)
 
             write_img = False
             # get image and show
@@ -242,24 +244,40 @@ class CompostApp(App):
                     if view_name == "rgb":
                         write_img = False  # Clear the write_img state every rgb image
                         key = cv2.waitKey(20)
-                        if key == ord(' '):
-                            print("key is {}, write_count is {}".format(key,write_count))
-                            if write_img == False:
-                                write_count_str = '{:0>4d}'.format(write_count)
+                        if key == ord(" "):
+                            print(
+                                "key is {}, write_count is {}".format(key, write_count)
+                            )
+                            if write_img is False:
+                                write_count_str = "{:0>4d}".format(write_count)
                                 write_count += 1
                                 write_img = True
 
                     # Trying to get a depth map:
                     if view_name == "disparity":
-                        disp_img = img[:, :, 0]  # reduce 3 reduntant channels to one
-                        if base_line is None:  # Only set base_line and focal_length_pix once
+                        disp_img = img[:, :, 0]  # reduce 3 redundant channels to one
+                        if (
+                            base_line is None
+                        ):  # Only set base_line and focal_length_pix once
                             base_line = (
                                 2.0
-                                * calibration.camera_data[2].extrinsics.spec_translation.x
+                                * calibration.camera_data[
+                                    2
+                                ].extrinsics.spec_translation.x
                             )  # in cm
-                            focal_length_pix = calibration.camera_data[2].intrinsic_matrix[
+                            focal_length_pix = calibration.camera_data[
+                                2
+                            ].intrinsic_matrix[
                                 0
-                            ]  # focal length in pixels
+                            ]  # x focal length in pixels
+                            focal_len_pix_y = calibration.camera_data[
+                                2
+                            ].intrinsic_matrix[4]
+                            print(
+                                "focal_len_pixels = x,y {}, {}".format(
+                                    focal_length_pix, focal_len_pix_y
+                                )
+                            )
                         depth = np.clip(
                             focal_length_pix
                             * base_line
@@ -272,8 +290,7 @@ class CompostApp(App):
                         if depth_center_x == 0:  # Only set this once
                             height, width = depth.shape
                             depth_center_x = int(width / 2)
-                            depth_center_y = int(height / 2)
-                            #print("center is [{}, {}]".format(depth_center_x, depth_center_y))
+                            # print("center is [{}, {}]".format(depth_center_x, depth_center_y))
                         rescaled_array = cv2.normalize(
                             depth, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U
                         )
@@ -285,17 +302,33 @@ class CompostApp(App):
                         cv2.imshow("colored depth", colored_depth)
 
                     if write_img:
-                        print("In write_img, view_name = {}, write_count = {}".format(view_name, write_count))
+                        print(
+                            "In write_img, view_name = {}, write_count = {}".format(
+                                view_name, write_count
+                            )
+                        )
                         if view_name == "disparity":
                             cv2.imwrite(depthi + write_count_str + ".png", depth)
-                            print("type colored_depth {}, shape {} pix type {}".format(type(colored_depth), colored_depth.shape, type(colored_depth[1,2,0])))
-                            cv2.imwrite(color_depth + write_count_str + ".png", colored_depth)
+                            print(
+                                "type colored_depth {}, shape {} pix type {}".format(
+                                    type(colored_depth),
+                                    colored_depth.shape,
+                                    type(colored_depth[1, 2, 0]),
+                                )
+                            )
+                            cv2.imwrite(
+                                color_depth + write_count_str + ".png", colored_depth
+                            )
                             print("hey")
                             print(color_depth + write_count_str + ".png")
                         elif view_name == "rgb":
                             s = rgb + write_count_str + ".png"
                             print(s)
-                            print("rgb colored_depth {}, shape {} pix type {}".format(type(img), img.shape, type(img[1,2,0])))
+                            print(
+                                "rgb colored_depth {}, shape {} pix type {}".format(
+                                    type(img), img.shape, type(img[1, 2, 0])
+                                )
+                            )
                             cv2.imwrite(s, img)
                         elif view_name == "left":
                             s = left + write_count_str + ".png"
